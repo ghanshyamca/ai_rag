@@ -1,0 +1,150 @@
+{
+  "info": {
+    "name": "RAG Q&A Bot API",
+    "description": "Collection for testing the RAG Q&A Support Bot API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Root",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": [""]
+        },
+        "description": "Get API information"
+      }
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["health"]
+        },
+        "description": "Check API health and vector store status"
+      }
+    },
+    {
+      "name": "Get Statistics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/stats",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["stats"]
+        },
+        "description": "Get knowledge base statistics"
+      }
+    },
+    {
+      "name": "Ask Question - Python Basics",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"What is Python used for?\",\n  \"top_k\": 5\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/ask",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["ask"]
+        },
+        "description": "Ask a question about Python basics"
+      }
+    },
+    {
+      "name": "Ask Question - Installation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"How do I install Python?\",\n  \"top_k\": 3\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/ask",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["ask"]
+        },
+        "description": "Ask about Python installation"
+      }
+    },
+    {
+      "name": "Ask Question - Features",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"What are the main features of Python?\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/ask",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["ask"]
+        },
+        "description": "Ask about Python features"
+      }
+    },
+    {
+      "name": "Ask Question - Virtual Environment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"How do I create a virtual environment in Python?\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/ask",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["ask"]
+        },
+        "description": "Ask about virtual environments"
+      }
+    }
+  ]
+}
