@@ -1,11 +1,16 @@
 """
 RAG Pipeline Module
 Implements the complete Retrieval Augmented Generation workflow
+
+Step 6: Retrieval and Answer Generation
+- Retrieval: Embeds query, fetches relevant chunks
+- Answer Generation: Uses LLM with retrieved context
 """
 from openai import OpenAI
 from vector_store import VectorStore
-from typing import Dict, List
+from typing import Dict, List, Optional
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,100 +48,234 @@ class RAGPipeline:
         self.max_tokens = max_tokens
         self.top_k = top_k
     
-    def create_prompt(self, query: str, context_docs: List[str]) -> str:
+    def retrieve(self, query: str, top_k: Optional[int] = None) -> Dict:
+        """
+        STEP 6 - RETRIEVAL FUNCTION
+        
+        Retrieves relevant chunks for a user query:
+        1. Embeds the user query using OpenAI embeddings
+        2. Fetches top-k relevant chunks from vector store
+        3. Returns chunks with metadata and relevance scores
+        
+        Args:
+            query: User question
+            top_k: Number of results to return (overrides default)
+            
+        Returns:
+            Dictionary with:
+            - documents: List of text chunks
+            - metadatas: List of metadata dicts (url, title, etc.)
+            - similarities: List of relevance scores (0-1)
+            - query: Original query
+            - retrieval_time: Time taken for retrieval
+        """
+        start_time = time.time()
+        k = top_k if top_k is not None else self.top_k
+        
+        logger.info(f"Retrieving top {k} chunks for query: '{query[:50]}...'")
+        
+        try:
+            # Use vector store's search method (which embeds query automatically)
+            results = self.vector_store.search(query, top_k=k)
+            
+            retrieval_time = time.time() - start_time
+            
+            # Log retrieval results
+            if results['count'] > 0:
+                avg_similarity = sum(results['similarities']) / len(results['similarities'])
+                logger.info(f"Retrieved {results['count']} chunks in {retrieval_time:.3f}s")
+                logger.info(f"Average similarity: {avg_similarity:.3f}")
+                logger.debug(f"Top result similarity: {results['similarities'][0]:.3f}")
+            else:
+                logger.warning("No results found for query")
+            
+            # Add retrieval time to results
+            results['retrieval_time'] = retrieval_time
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error during retrieval: {str(e)}")
+            return {
+                'query': query,
+                'documents': [],
+                'metadatas': [],
+                'similarities': [],
+                'distances': [],
+                'count': 0,
+                'retrieval_time': time.time() - start_time,
+                'error': str(e)
+            }
+    
+    def create_prompt(self, query: str, context_docs: List[str], metadatas: List[Dict]) -> str:
         """
         Create a prompt with context for the LLM
         
         Args:
             query: User question
             context_docs: List of relevant document chunks
+            metadatas: List of metadata for each chunk
             
         Returns:
             Formatted prompt
         """
-        context = "\n\n".join([f"Context {i+1}:\n{doc}" for i, doc in enumerate(context_docs)])
+        # Build context with source attribution
+        context_parts = []
+        for i, (doc, meta) in enumerate(zip(context_docs, metadatas), 1):
+            context_parts.append(
+                f"[Source {i}: {meta['title']}]\n{doc}"
+            )
         
-        prompt = f"""You are a helpful assistant that answers questions based only on the provided context.
-If the answer cannot be found in the context, say "I don't have enough information to answer that question based on the available documentation."
+        context = "\n\n".join(context_parts)
+        
+        prompt = f"""You are a helpful assistant that answers questions based ONLY on the provided context.
 
-Context:
+IMPORTANT INSTRUCTIONS:
+- Answer the question using ONLY the information from the context below
+- If the answer cannot be found in the context, respond with: "I don't have enough information to answer that question based on the available documentation."
+- Be concise but complete
+- Cite which sources you used by mentioning the source numbers (e.g., "According to Source 1...")
+- Do not make up information or use external knowledge
+
+CONTEXT:
 {context}
 
-Question: {query}
+QUESTION: {query}
 
-Answer:"""
+ANSWER:"""
         
         return prompt
     
-    def generate_answer(self, query: str) -> Dict:
+    def generate_answer(self, query: str, top_k: Optional[int] = None) -> Dict:
         """
-        Generate an answer using RAG
+        STEP 6 - ANSWER GENERATION FUNCTION
+        
+        Complete RAG workflow:
+        1. Retrieve relevant chunks using retrieve()
+        2. Prepare prompt with retrieved context
+        3. Call language model to generate answer
+        4. Instruct LLM to answer only from given context
+        5. Return answer with source URLs
         
         Args:
             query: User question
+            top_k: Number of chunks to retrieve (overrides default)
             
         Returns:
-            Dictionary with answer and sources
+            Dictionary with:
+            - query: Original question
+            - answer: Generated answer
+            - sources: List of source URLs with titles and relevance
+            - retrieval_time: Time for retrieval
+            - generation_time: Time for LLM generation
+            - total_time: Total processing time
+            - success: Whether generation succeeded
         """
+        start_time = time.time()
+        
         try:
             # Step 1: Retrieve relevant documents
-            logger.info(f"Processing query: {query}")
-            search_results = self.vector_store.search(query, top_k=self.top_k)
+            logger.info(f"Processing query: '{query}'")
+            retrieval_results = self.retrieve(query, top_k=top_k)
             
-            if not search_results['documents']:
+            if retrieval_results['count'] == 0:
                 return {
+                    'query': query,
                     'answer': "I don't have any information to answer that question.",
                     'sources': [],
-                    'success': False
+                    'retrieval_time': retrieval_results.get('retrieval_time', 0),
+                    'generation_time': 0,
+                    'total_time': time.time() - start_time,
+                    'success': False,
+                    'error': 'No relevant documents found'
                 }
             
             # Step 2: Create prompt with context
-            prompt = self.create_prompt(query, search_results['documents'])
+            prompt = self.create_prompt(
+                query, 
+                retrieval_results['documents'],
+                retrieval_results['metadatas']
+            )
+            
+            # Log prompt size for debugging
+            logger.debug(f"Prompt size: {len(prompt)} characters")
             
             # Step 3: Generate answer using LLM
-            logger.info("Generating answer with LLM")
+            logger.info(f"Generating answer with {self.llm_model}")
+            gen_start = time.time()
+            
             response = self.openai_client.chat.completions.create(
                 model=self.llm_model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that answers questions based on provided context."},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system", 
+                        "content": "You are a helpful assistant that answers questions based strictly on provided context. Never use external knowledge."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
                 ],
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
             
-            answer = response.choices[0].message.content
+            generation_time = time.time() - gen_start
+            answer = response.choices[0].message.content.strip()
             
-            # Step 4: Prepare sources
+            logger.info(f"Answer generated in {generation_time:.3f}s")
+            
+            # Step 4: Prepare sources with relevance scores
             sources = []
-            for metadata, distance in zip(search_results['metadatas'], search_results['distances']):
-                sources.append({
-                    'title': metadata['title'],
-                    'url': metadata['url'],
-                    'relevance_score': 1 - distance  # Convert distance to similarity
-                })
-            
-            # Remove duplicate URLs
             seen_urls = set()
-            unique_sources = []
-            for source in sources:
-                if source['url'] not in seen_urls:
-                    seen_urls.add(source['url'])
-                    unique_sources.append(source)
+            
+            for metadata, similarity in zip(
+                retrieval_results['metadatas'], 
+                retrieval_results['similarities']
+            ):
+                url = metadata['url']
+                
+                # Avoid duplicate URLs
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    sources.append({
+                        'title': metadata['title'],
+                        'url': url,
+                        'relevance_score': similarity,
+                        'chunk_id': metadata.get('chunk_id', 'N/A')
+                    })
+            
+            total_time = time.time() - start_time
+            
+            # Log summary
+            logger.info(f"Total processing time: {total_time:.3f}s")
+            logger.info(f"Used {len(retrieval_results['documents'])} chunks from {len(sources)} unique sources")
             
             return {
+                'query': query,
                 'answer': answer,
-                'sources': unique_sources,
-                'success': True,
-                'num_contexts_used': len(search_results['documents'])
+                'sources': sources,
+                'num_chunks_used': len(retrieval_results['documents']),
+                'num_unique_sources': len(sources),
+                'retrieval_time': retrieval_results['retrieval_time'],
+                'generation_time': generation_time,
+                'total_time': total_time,
+                'success': True
             }
             
         except Exception as e:
             logger.error(f"Error generating answer: {str(e)}")
+            total_time = time.time() - start_time
+            
             return {
+                'query': query,
                 'answer': f"An error occurred while processing your question: {str(e)}",
                 'sources': [],
-                'success': False
+                'retrieval_time': 0,
+                'generation_time': 0,
+                'total_time': total_time,
+                'success': False,
+                'error': str(e)
             }
 
 

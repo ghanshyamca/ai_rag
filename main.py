@@ -79,6 +79,17 @@ def build_knowledge_base(force_recrawl=False):
     )
     chunks = processor.process_documents(pages_data)
     
+    # Display chunk statistics
+    chunk_stats = processor.get_chunk_statistics(chunks)
+    logger.info(f"\n{'='*60}")
+    logger.info("CHUNK STATISTICS")
+    logger.info(f"{'='*60}")
+    logger.info(f"Total chunks: {chunk_stats['total_chunks']}")
+    logger.info(f"Average chunk size: {chunk_stats['avg_chunk_size']:.0f} chars")
+    logger.info(f"Min chunk size: {chunk_stats['min_chunk_size']} chars")
+    logger.info(f"Max chunk size: {chunk_stats['max_chunk_size']} chars")
+    logger.info(f"{'='*60}\n")
+    
     # Step 3: Initialize vector store
     logger.info("Step 3: Initializing vector store")
     vector_store = VectorStore(
@@ -103,10 +114,40 @@ def build_knowledge_base(force_recrawl=False):
     logger.info("Step 4: Generating embeddings and storing in vector database")
     vector_store.add_documents(chunks)
     
-    logger.info(f"\nKnowledge base built successfully!")
+    # Step 5: Test similarity search
+    logger.info("Step 5: Testing similarity search")
+    test_queries = [
+        "How do I get started?",
+        "What are the main features?",
+        "How do I install this?"
+    ]
+    
+    logger.info(f"\\n{'='*60}")
+    logger.info("TESTING SIMILARITY SEARCH")
+    logger.info(f"{'='*60}\\n")
+    
+    for query in test_queries:
+        logger.info(f"Query: '{query}'")
+        results = vector_store.search(query, top_k=2)
+        
+        if results['count'] > 0:
+            top_similarity = results['similarities'][0]
+            logger.info(f"  Top result: {results['metadatas'][0]['title']}")
+            logger.info(f"  Similarity: {top_similarity:.4f} ({top_similarity*100:.1f}%)")
+            
+            if top_similarity < 0.5:
+                logger.warning(f"  ⚠ Low similarity score - consider adjusting chunk size or cleaning")
+        else:
+            logger.warning(f"  No results found")
+        logger.info("")
+    
+    logger.info(f"\\n{'='*60}")
+    logger.info("KNOWLEDGE BASE BUILD COMPLETE")
+    logger.info(f"{'='*60}")
     logger.info(f"Total pages crawled: {len(pages_data)}")
     logger.info(f"Total chunks created: {len(chunks)}")
     logger.info(f"Documents in vector store: {vector_store.get_collection_count()}")
+    logger.info(f"{'='*60}\\n")
 
 
 if __name__ == "__main__":

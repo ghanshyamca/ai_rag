@@ -61,6 +61,12 @@ class VectorStore:
             Embedding vector
         """
         try:
+            # Truncate text if too long (max 8191 tokens for ada-002)
+            max_chars = 8000  # Conservative limit
+            if len(text) > max_chars:
+                logger.warning(f"Text truncated from {len(text)} to {max_chars} chars")
+                text = text[:max_chars]
+            
             response = self.openai_client.embeddings.create(
                 model=self.embedding_model,
                 input=text
@@ -81,9 +87,18 @@ class VectorStore:
             List of embedding vectors
         """
         try:
+            # Truncate texts if too long
+            max_chars = 8000
+            truncated_texts = []
+            for text in texts:
+                if len(text) > max_chars:
+                    truncated_texts.append(text[:max_chars])
+                else:
+                    truncated_texts.append(text)
+            
             response = self.openai_client.embeddings.create(
                 model=self.embedding_model,
-                input=texts
+                input=truncated_texts
             )
             return [item.embedding for item in response.data]
         except Exception as e:
@@ -98,11 +113,26 @@ class VectorStore:
             chunks: List of chunk dictionaries with 'text' and metadata
             batch_size: Number of documents to process at once
         """
+        if not chunks:
+            logger.warning("No chunks to add")
+            return
+        
         total_chunks = len(chunks)
-        logger.info(f"Adding {total_chunks} chunks to vector store")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"ADDING DOCUMENTS TO VECTOR STORE")
+        logger.info(f"{'='*60}")
+        logger.info(f"Total chunks: {total_chunks}")
+        logger.info(f"Batch size: {batch_size}")
+        logger.info(f"Embedding model: {self.embedding_model}")
+        logger.info(f"{'='*60}\n")
+        
+        import time
+        start_time = time.time()
+        total_batches = (total_chunks - 1) // batch_size + 1
         
         for i in range(0, total_chunks, batch_size):
             batch = chunks[i:i + batch_size]
+            batch_num = i // batch_size + 1
             
             # Prepare data
             texts = [chunk['text'] for chunk in batch]
@@ -112,26 +142,44 @@ class VectorStore:
                     'url': chunk['url'],
                     'title': chunk['title'],
                     'chunk_id': str(chunk['chunk_id']),
-                    'total_chunks': str(chunk['total_chunks'])
+                    'total_chunks': str(chunk['total_chunks']),
+                    'char_count': str(chunk.get('char_count', len(chunk['text'])))
                 }
                 for chunk in batch
             ]
             
             # Generate embeddings
-            logger.info(f"Generating embeddings for batch {i//batch_size + 1}/{(total_chunks-1)//batch_size + 1}")
-            embeddings = self.generate_embeddings_batch(texts)
+            logger.info(f"[Batch {batch_num}/{total_batches}] Generating embeddings for {len(batch)} chunks...")
+            batch_start = time.time()
             
-            # Add to collection
-            self.collection.add(
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas,
-                ids=ids
-            )
-            
-            logger.info(f"Added {len(batch)} chunks (total: {min(i+batch_size, total_chunks)}/{total_chunks})")
+            try:
+                embeddings = self.generate_embeddings_batch(texts)
+                batch_time = time.time() - batch_start
+                
+                # Add to collection
+                self.collection.add(
+                    embeddings=embeddings,
+                    documents=texts,
+                    metadatas=metadatas,
+                    ids=ids
+                )
+                
+                processed = min(i + batch_size, total_chunks)
+                logger.info(f"[Batch {batch_num}/{total_batches}] ✓ Added {len(batch)} chunks in {batch_time:.2f}s (Progress: {processed}/{total_chunks})")
+                
+            except Exception as e:
+                logger.error(f"[Batch {batch_num}/{total_batches}] ✗ Error: {str(e)}")
+                raise
         
-        logger.info(f"Successfully added all {total_chunks} chunks to vector store")
+        total_time = time.time() - start_time
+        logger.info(f"\n{'='*60}")
+        logger.info(f"EMBEDDING GENERATION COMPLETE")
+        logger.info(f"{'='*60}")
+        logger.info(f"Total chunks processed: {total_chunks}")
+        logger.info(f"Total time: {total_time:.2f}s")
+        logger.info(f"Average time per chunk: {total_time/total_chunks:.3f}s")
+        logger.info(f"Collection size: {self.get_collection_count()}")
+        logger.info(f"{'='*60}\n")
     
     def search(self, query: str, top_k: int = 5) -> Dict:
         """
@@ -142,25 +190,42 @@ class VectorStore:
             top_k: Number of results to return
             
         Returns:
-            Dictionary with results
+            Dictionary with results including documents, metadata, and similarity scores
         """
-        # Generate query embedding
-        query_embedding = self.generate_embedding(query)
-        
-        # Search in ChromaDB
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
-        )
-        
-        # Format results
-        formatted_results = {
-            'documents': results['documents'][0] if results['documents'] else [],
-            'metadatas': results['metadatas'][0] if results['metadatas'] else [],
-            'distances': results['distances'][0] if results['distances'] else []
-        }
-        
-        return formatted_results
+        try:
+            # Generate query embedding
+            logger.debug(f"Generating embedding for query: {query[:100]}...")
+            query_embedding = self.generate_embedding(query)
+            
+            # Search in ChromaDB
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k
+            )
+            
+            # Format results with similarity scores (convert distance to similarity)
+            documents = results['documents'][0] if results['documents'] else []
+            metadatas = results['metadatas'][0] if results['metadatas'] else []
+            distances = results['distances'][0] if results['distances'] else []
+            
+            # Convert cosine distance to similarity score (1 - distance)
+            similarities = [1 - dist for dist in distances]
+            
+            formatted_results = {
+                'query': query,
+                'documents': documents,
+                'metadatas': metadatas,
+                'distances': distances,
+                'similarities': similarities,
+                'count': len(documents)
+            }
+            
+            logger.debug(f"Found {len(documents)} results")
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Error during search: {str(e)}")
+            raise
     
     def get_collection_count(self) -> int:
         """

@@ -58,6 +58,56 @@ try {
     Write-Host "❌ FAILED: $_" -ForegroundColor Red
 }
 
+# Test 3.5: Crawl Status
+Print-Separator
+Write-Host "Test 3.5: GET /crawl/status" -ForegroundColor Green
+try {
+    $response = Invoke-WebRequest -Uri "$baseUrl/crawl/status" -Method Get -UseBasicParsing
+    Print-Response $response
+    Write-Host "✅ PASSED" -ForegroundColor Green
+} catch {
+    Write-Host "❌ FAILED: $_" -ForegroundColor Red
+}
+
+# Test 3.75: POST /crawl (Optional - uncomment to test)
+Print-Separator
+Write-Host "Test 3.75: POST /crawl (OPTIONAL - COMMENTED OUT)" -ForegroundColor Yellow
+Write-Host "⚠️  This test is disabled by default as it takes time." -ForegroundColor Yellow
+Write-Host "Uncomment the code below to test the crawl endpoint.`n" -ForegroundColor Yellow
+
+<#
+Write-Host "Test 3.75: POST /crawl" -ForegroundColor Green
+Write-Host "⚠️  This will crawl a website and may take 30+ seconds..." -ForegroundColor Yellow
+
+try {
+    $body = @{
+        base_url = "https://docs.python.org/3/"
+        max_pages = 5
+        crawl_delay = 1.0
+    } | ConvertTo-Json
+    
+    $headers = @{
+        "Content-Type" = "application/json"
+    }
+    
+    Write-Host "Starting crawl... Please wait..." -ForegroundColor Cyan
+    $response = Invoke-WebRequest -Uri "$baseUrl/crawl" -Method Post -Body $body -Headers $headers -UseBasicParsing -TimeoutSec 300
+    Print-Response $response
+    
+    $data = $response.Content | ConvertFrom-Json
+    if ($data.success) {
+        Write-Host "`n✅ Crawl completed successfully!" -ForegroundColor Green
+        Write-Host "Pages crawled: $($data.pages_crawled)" -ForegroundColor Cyan
+        Write-Host "Chunks created: $($data.chunks_created)" -ForegroundColor Cyan
+        Write-Host "Embeddings generated: $($data.embeddings_generated)" -ForegroundColor Cyan
+        Write-Host "Total time: $($data.total_time) seconds" -ForegroundColor Cyan
+    }
+    Write-Host "✅ PASSED" -ForegroundColor Green
+} catch {
+    Write-Host "❌ FAILED: $_" -ForegroundColor Red
+}
+#>
+
 # Test 4-7: Ask questions
 $questions = @(
     "What is Python used for?",

@@ -4,13 +4,14 @@ A Question & Answer support bot built with Retrieval Augmented Generation (RAG) 
 
 ## 🚀 Features
 
-- **Web Crawling**: Automatically crawls website pages and extracts clean text content
+- **Web Crawling**: Automatically crawls website pages and extracts clean text content (POST /crawl)
 - **Text Processing**: Cleans and chunks text with configurable overlap for optimal context
-- **Vector Embeddings**: Generates embeddings using OpenAI's embedding models
+- **Vector Embeddings**: Generates embeddings using OpenAI's text-embedding-ada-002
 - **Vector Database**: Stores embeddings in ChromaDB for efficient similarity search
-- **RAG Pipeline**: Retrieves relevant context and generates accurate answers using GPT models
-- **REST API**: FastAPI-based endpoint for easy integration
+- **RAG Pipeline**: Retrieves relevant context and generates accurate answers using GPT-3.5-turbo
+- **REST API**: Full FastAPI server with crawling and Q&A endpoints
 - **Configurable**: Environment-based configuration for flexibility
+- **Well-Tested**: Comprehensive test suites and demo scripts
 
 ## 📋 Requirements
 
@@ -60,90 +61,96 @@ MAX_PAGES=50
 
 ## 📖 Usage
 
-### Step 1: Build the Knowledge Base
+### Quick Start (All-in-One API)
 
-First, crawl the website and build the vector database:
-
-```bash
-python main.py
-```
-
-This will:
-1. Crawl pages from the `TARGET_URL`
-2. Clean and chunk the text
-3. Generate embeddings for each chunk
-4. Store embeddings in ChromaDB
-
-To force a complete rebuild:
-```bash
-python main.py --force
-```
-
-### Step 2: Start the API Server
-
+**Step 1: Start the API Server**
 ```bash
 python api.py
 ```
 
-Or using uvicorn directly:
-```bash
-uvicorn api:app --host 0.0.0.0 --port 8000 --reload
-```
-
 The API will be available at `http://localhost:8000`
+- Interactive docs: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
-### Step 3: Test the API
-
-#### Using the Interactive Docs
-
-Navigate to `http://localhost:8000/docs` for the interactive Swagger UI.
-
-#### Using curl
-
-**Health Check**:
+**Step 2: Build Knowledge Base via API**
 ```bash
-curl http://localhost:8000/health
+curl -X POST "http://localhost:8000/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base_url": "https://docs.python.org/3/",
+    "max_pages": 10,
+    "crawl_delay": 1.0
+  }'
 ```
 
-**Ask a Question**:
+**Step 3: Ask Questions via API**
 ```bash
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
-  -d "{\"question\": \"What is Python used for?\"}"
+  -d '{
+    "question": "How do I install Python?",
+    "top_k": 5
+  }'
 ```
 
-**Get Statistics**:
+### Alternative: CLI-based Knowledge Building
+
+If you prefer to build the knowledge base via command line:
+
 ```bash
-curl http://localhost:8000/stats
+# Build knowledge base
+python main.py
+
+# Then start API server
+python api.py
 ```
 
-#### Using PowerShell
+### Testing
 
-**Ask a Question**:
+**PowerShell**:
 ```powershell
-$headers = @{"Content-Type"="application/json"}
-$body = @{question="What is Python used for?"} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://localhost:8000/ask" -Method Post -Headers $headers -Body $body
+.\test_api.ps1
 ```
+
+**Python**:
+```bash
+python demo_api.py
+```
+
+**Postman**: Import `postman_collection.json`
 
 ## 📡 API Endpoints
 
-### `GET /`
-Root endpoint with API information.
+### `POST /crawl` ⭐
+Crawl a website and build the knowledge base.
 
-### `GET /health`
-Health check endpoint.
+**Request**:
+```json
+{
+  "base_url": "https://docs.python.org/3/",
+  "max_pages": 10,
+  "crawl_delay": 1.0
+}
+```
 
 **Response**:
 ```json
 {
-  "status": "healthy",
-  "vector_store_count": 245
+  "success": true,
+  "message": "Crawling completed successfully...",
+  "pages_crawled": 10,
+  "chunks_created": 87,
+  "embeddings_generated": 87,
+  "total_time": 45.23
 }
 ```
 
-### `POST /ask`
-Ask a question and get an answer.
+**Pipeline**: Crawl → Extract → Chunk → Embed → Index
+
+---
+
+### `POST /ask` ⭐
+Ask a question using RAG (Retrieval-Augmented Generation).
 
 **Request**:
 ```json
@@ -156,56 +163,126 @@ Ask a question and get an answer.
 **Response**:
 ```json
 {
-  "question": "How do I install Python?",
-  "answer": "To install Python, you can download it from python.org...",
+  "success": true,
+  "answer": "To install Python, visit python.org and download...",
   "sources": [
     {
       "title": "Python Setup and Usage",
       "url": "https://docs.python.org/3/using/index.html",
-      "relevance_score": 0.89
+      "relevance_score": 0.8542
     }
-  ],
-  "success": true,
-  "num_contexts_used": 5
+  ]
 }
 ```
 
-### `GET /stats`
-Get knowledge base statistics.
+**Pipeline**: Retrieve → Generate → Respond
+
+---
+
+### `GET /health`
+Health check endpoint.
 
 **Response**:
 ```json
 {
-  "total_documents": 245,
-  "collection_name": "website_docs",
-  "embedding_model": "text-embedding-ada-002",
-  "llm_model": "gpt-3.5-turbo"
+  "status": "healthy",
+  "vector_store_count": 87,
+  "timestamp": "2024-01-15T10:30:45.123456"
 }
 ```
 
-## 🧪 Testing with Postman
+---
 
-1. **Import Collection**: Create a new collection in Postman
+### `GET /stats`
+Get detailed statistics.
 
-2. **Health Check**:
-   - Method: GET
-   - URL: `http://localhost:8000/health`
+**Response**:
+```json
+{
+  "total_documents": 87,
+  "collection_name": "rag_documents",
+  "embedding_model": "text-embedding-ada-002",
+  "embedding_dimensions": 1536,
+  "llm_model": "gpt-3.5-turbo",
+  "chunk_size": 1000,
+  "chunk_overlap": 200,
+  "is_crawling": false,
+  "last_crawl": "2024-01-15T09:25:30.456789"
+}
+```
 
-3. **Ask Question**:
-   - Method: POST
-   - URL: `http://localhost:8000/ask`
-   - Headers: `Content-Type: application/json`
-   - Body (raw JSON):
-     ```json
-     {
-       "question": "What is Python?",
-       "top_k": 5
-     }
-     ```
+---
 
-4. **Get Stats**:
-   - Method: GET
-   - URL: `http://localhost:8000/stats`
+### `GET /crawl/status`
+Check if a crawl is in progress.
+
+**Response**:
+```json
+{
+  "is_crawling": false,
+  "last_crawl_time": "2024-01-15T09:25:30.456789",
+  "last_result": {
+    "success": true,
+    "pages_crawled": 10,
+    "chunks_created": 87
+  }
+}
+```
+
+---
+
+### `GET /`
+Root endpoint with API information.
+---
+
+## 🧪 Testing
+
+### Test Scripts
+
+**PowerShell**:
+```powershell
+.\test_api.ps1
+```
+
+**Python Demo**:
+```bash
+python demo_api.py
+```
+
+**Postman**: Import `postman_collection.json`
+
+### Manual Testing with curl
+
+**Health Check**:
+```bash
+curl http://localhost:8000/health
+```
+
+**Crawl Website**:
+```bash
+curl -X POST "http://localhost:8000/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base_url": "https://docs.python.org/3/",
+    "max_pages": 5,
+    "crawl_delay": 1.0
+  }'
+```
+
+**Ask Question**:
+```bash
+curl -X POST "http://localhost:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "How do I install Python?",
+    "top_k": 5
+  }'
+```
+
+**Check Stats**:
+```bash
+curl http://localhost:8000/stats
+```
 
 ## ⚙️ Configuration
 
@@ -228,17 +305,44 @@ Edit the `.env` file to customize behavior:
 
 ```
 ai_rag/
-├── api.py                  # FastAPI application
-├── config.py              # Configuration management
-├── crawler.py             # Web crawler implementation
-├── text_processor.py      # Text cleaning and chunking
-├── vector_store.py        # Vector database operations
-├── rag_pipeline.py        # RAG workflow implementation
-├── main.py                # Knowledge base builder
-├── requirements.txt       # Python dependencies
-├── .env.example          # Example environment file
-├── .gitignore            # Git ignore rules
-└── README.md             # This file
+├── api.py                      # FastAPI REST API server
+├── config.py                   # Configuration management
+├── crawler.py                  # Web crawler implementation
+├── text_processor.py           # Text cleaning and chunking
+├── vector_store.py             # Vector database operations
+├── rag_pipeline.py             # RAG workflow (retrieve + generate)
+├── main.py                     # CLI knowledge base builder
+├── requirements.txt            # Python dependencies
+├── .env                        # Environment variables
+├── .gitignore                  # Git ignore rules
+├── README.md                   # This file
+│
+├── Test Scripts:
+│   ├── test_api.ps1           # PowerShell API tests
+│   ├── test_api.py            # Python API tests (legacy)
+│   ├── demo_api.py            # Interactive API demo
+│   ├── demo_rag.py            # RAG pipeline demo
+│   ├── demo_chunking.py       # Chunking demo
+│   ├── demo_embeddings.py     # Embeddings demo
+│   ├── test_rag.py            # RAG tests
+│   ├── test_chunking.py       # Chunking tests
+│   └── test_embeddings.py     # Embeddings tests
+│
+├── Documentation:
+│   ├── STEP5_EMBEDDINGS_COMPLETE.md      # Step 5 docs
+│   ├── STEP5_QUICK_REFERENCE.txt         # Step 5 reference
+│   ├── STEP5_COMPLETION_SUMMARY.md       # Step 5 summary
+│   ├── STEP6_RAG_COMPLETE.md             # Step 6 docs
+│   ├── STEP6_QUICK_REFERENCE.txt         # Step 6 reference
+│   ├── STEP6_COMPLETION_SUMMARY.md       # Step 6 summary
+│   ├── STEP7_API_COMPLETE.md             # Step 7 docs (API)
+│   ├── STEP7_QUICK_REFERENCE.txt         # Step 7 reference
+│   ├── STEP7_COMPLETION_SUMMARY.md       # Step 7 summary
+│   ├── PROJECT_SUMMARY.md                # Project overview
+│   ├── QUICKSTART.md                     # Quick start guide
+│   └── SUBMISSION.md                     # Submission checklist
+│
+└── postman_collection.json     # Postman API collection
 ```
 
 ## 🔄 RAG Workflow
@@ -277,39 +381,103 @@ Try these questions after crawling Python documentation:
 - "What are Python's main features?"
 - "How do I create a virtual environment?"
 - "What is pip?"
+- "How do I write a function in Python?"
+- "What are decorators?"
+
+## 📚 Documentation
+
+### Complete Step-by-Step Guides
+- **STEP5_EMBEDDINGS_COMPLETE.md** - Embeddings and vector storage
+- **STEP6_RAG_COMPLETE.md** - Retrieval and answer generation  
+- **STEP7_API_COMPLETE.md** - REST API implementation
+
+### Quick References (ASCII Art)
+- **STEP5_QUICK_REFERENCE.txt** - Embeddings quick ref
+- **STEP6_QUICK_REFERENCE.txt** - RAG quick ref
+- **STEP7_QUICK_REFERENCE.txt** - API quick ref
+
+### Interactive Demos
+- **demo_embeddings.py** - Embeddings demo
+- **demo_chunking.py** - Text chunking demo
+- **demo_rag.py** - RAG pipeline demo
+- **demo_api.py** - API usage demo
+
+### Test Suites
+- **test_embeddings.py** - Embeddings tests
+- **test_chunking.py** - Chunking tests
+- **test_rag.py** - RAG pipeline tests (5 questions)
+- **test_api.ps1** - API endpoint tests
 
 ## 🚀 Advanced Usage
 
 ### Test Individual Components
 
-**Test Crawler**:
+**Test Embeddings**:
 ```bash
-python crawler.py
+python test_embeddings.py
 ```
 
-**Test Text Processor**:
+**Test Chunking**:
 ```bash
-python text_processor.py
-```
-
-**Test Vector Store**:
-```bash
-python vector_store.py
+python test_chunking.py
 ```
 
 **Test RAG Pipeline**:
 ```bash
-python rag_pipeline.py
+python test_rag.py
 ```
 
-### Custom Crawling
+**Test API**:
+```powershell
+.\test_api.ps1
+```
 
-Modify `config.py` or `.env` to crawl different websites:
+### Run Interactive Demos
 
+**Embeddings Demo**:
+```bash
+python demo_embeddings.py
+```
+
+**Chunking Demo**:
+```bash
+python demo_chunking.py
+```
+
+**RAG Demo**:
+```bash
+python demo_rag.py
+```
+
+**API Demo**:
+```bash
+python demo_api.py
+```
+
+### Custom Crawling via API
+
+```bash
+curl -X POST "http://localhost:8000/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base_url": "https://your-website.com",
+    "max_pages": 20,
+    "crawl_delay": 1.5
+  }'
+```
+
+### Custom Crawling via CLI
+
+Modify `.env`:
 ```env
 TARGET_URL=https://your-website.com
 MAX_PAGES=100
 CRAWL_DELAY=2.0
+```
+
+Then run:
+```bash
+python main.py --force
 ```
 
 ## 📄 License
